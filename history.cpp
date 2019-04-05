@@ -8,6 +8,8 @@
 #include <pwd.h>
 #include <string>
 #include <vector>
+#include <cstring>
+#include <limits>
 #include <unordered_set>
 
 static std::vector<HistoryItem> g_items;
@@ -49,6 +51,27 @@ void history_filter(const char *pattern)
 	g_itemSet.clear();
 }
 
+HistoryItem newHistoryItem(const char* line)
+{
+	HistoryItem item = {};
+	item.line = line;
+
+	if (g_pattern.size()) {
+		size_t matches = 0;
+		const char* match = std::strstr(line, g_pattern.c_str());
+		while (matches < HISTORY_MAX_MATCHES && match != nullptr) {
+			// Don't store matches beyond 255 bytes
+			if (match + g_pattern.size() - line > std::numeric_limits<uint8_t>::max()) {
+				break;
+			}
+			item.matches.push_back({static_cast<uint8_t>(match - line), static_cast<uint8_t>(g_pattern.size())});
+			match = std::strstr(match + g_pattern.size(), g_pattern.c_str());
+		}
+	}
+
+	return item;
+}
+
 void history_items(int max, int *count, const HistoryItem **items)
 {
 	while ((int)g_items.size() < max) {
@@ -68,10 +91,8 @@ void history_items(int max, int *count, const HistoryItem **items)
 		}
 		assert(entry);
 		if (g_itemSet.find(entry->line) == g_itemSet.end()) {
-			HistoryItem item;
-			item.line = entry->line;
 			g_itemSet.insert(entry->line);
-			g_items.push_back(item);
+			g_items.push_back(newHistoryItem(entry->line));
 		}
 	}
 	*count = (int)g_items.size();

@@ -41,9 +41,19 @@ void draw_history_item(const HistoryItem *item, int line)
 	if (item) {
 		size_t width = static_cast<size_t>(getmaxx(stdscr));
 		bool selLine = line == get_history_line(g_selection);
-		std::string str = std::string(selLine ? "> " : "  ") + item->line;
+		std::string margin(selLine ? "> " : "  ");
+		std::string str = margin + item->line;
 		//mvprintw(line, 0, "%s%s", selLine ? "> " : "  ", item->line);
-		mvaddnstr(line, 0, str.c_str(), std::min(str.size(), width));
+		size_t lastMatch = 0;
+		for (auto& match : item->matches) {
+			size_t matchStart = static_cast<size_t>(match.start) + margin.size();
+			mvaddnstr(line, lastMatch, str.substr(lastMatch).c_str(), std::max(static_cast<size_t>(0), std::min(width, matchStart) - lastMatch));
+			attrset(COLOR_PAIR(1));
+			mvaddnstr(line, matchStart, str.substr(matchStart).c_str(), std::max(static_cast<size_t>(0), std::min(width, matchStart + static_cast<size_t>(match.size)) - matchStart));
+			attrset(A_NORMAL);
+			lastMatch = matchStart + match.size;
+		}
+		mvaddnstr(line, lastMatch, str.substr(lastMatch).c_str(), std::min(str.size() - lastMatch, width));
 	}
 
 	// Clear the rest of the line only if we didn't just wrap by writing to the last column
@@ -99,6 +109,7 @@ int screen_begin()
 	if (has_colors()) {
 		start_color();
 		use_default_colors();
+		init_pair(1, COLOR_RED, -1);
 	}
 	cbreak();
 	noecho();

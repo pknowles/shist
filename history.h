@@ -1,10 +1,17 @@
 
 #pragma once
 #include <stdint.h>
+#include <vector>
+
+#define HISTORY_MAX_MATCHES 4
+
+struct LineRange {
+	uint8_t start, size;
+};
 
 struct HistoryItem {
 	const char* line;
-	uint8_t matches[4];
+	std::vector<LineRange> matches;
 };
 
 int history_begin();
