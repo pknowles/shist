@@ -6,10 +6,6 @@
 #include <ncurses.h>
 #include <assert.h>
 #include <string>
-#include <thread>
-#include <deque>
-#include <mutex>
-
 #include <readline/readline.h>
 
 struct WindowLayout {
@@ -24,11 +20,6 @@ static std::string g_prompt;
 static std::string g_pattern;
 static int g_cursor = 0;
 static int g_selection = 0;
-static int g_realStdin;
-static int g_myStdin[2];
-static std::thread g_stdinProxyThread;
-static std::deque<int> g_rawStdin;
-static std::mutex g_rawStdinMutex;
 
 void post_draw()
 {
@@ -84,26 +75,19 @@ void on_resize()
 	post_draw();
 }
 
-void stdin_proxy()
-{
-	FILE* realStdin = fdopen(g_realStdin, "r");
-	FILE* myStdin = fdopen(g_myStdin[1], "w");
-	while (true) {
-		int c = getc(realStdin);
-		//fprintf(stderr, "proxy %i\n", c);
-		g_rawStdinMutex.lock();
-		g_rawStdin.push_back(c);
-		g_rawStdinMutex.unlock();
-		putc(c, myStdin);
-	}
-}
-
 int screen_begin()
 {
 	int ret = history_begin();
 	if (ret != 0) {
 		return ret;
 	}
+
+	// FIXME: need some hackery to make ncurses use this stdin instead of the real one
+//	g_screenStdin = get_stdin_dupe();
+//	g_screenStdinFile = fdopen(g_screenStdin, "r");
+//	if (!g_screenStdinFile) {
+//		fprintf(stderr, "Error: failed to open stdin dupe %i", g_screenStdin);
+//	}
 
 	g_prompt = "$ ";
 
@@ -120,13 +104,6 @@ int screen_begin()
 	intrflush(NULL, FALSE);
 
 //	keypad(stdscr, TRUE);
-
-	// hook stdin. needed to keep raw input
-//	pipe(g_myStdin);
-//	g_realStdin = dup(STDIN_FILENO);
-//	dup2(g_myStdin[0], STDIN_FILENO);
-//	close(g_myStdin[0]);
-//	g_stdinProxyThread = std::thread(stdin_proxy);
 
 	on_resize();
 	return 0;
@@ -194,23 +171,9 @@ void move_selection(int i, bool pages, bool wrap)
 	}
 }
 
-bool get_raw_char(int* c)
-{
-	std::lock_guard<std::mutex> lock(g_rawStdinMutex);
-	if (g_rawStdin.size()) {
-		*c = g_rawStdin[0];
-		g_rawStdin.pop_front();
-		return true;
-	}
-	return false;
-}
-
 int screen_get_char()
 {
 	int c;
-	if (get_raw_char(&c)) {
-		return c;
-	}
 
 	while (true) {
 		c = wgetch(stdscr);

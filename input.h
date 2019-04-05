@@ -9,3 +9,7 @@ const char *readline_step(int c);
 void readline_end();
 void term_replace_command(const char* contents);
 void term_execute();
+
+void input_begin();
+void input_end();
+int get_stdin_dupe();

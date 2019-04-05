@@ -14,7 +14,7 @@ DEPENDENCIES:= $(filter %.d,$(SOURCE:%.cpp=$(BUILD_DIR)/%.d))
 -include $(DEPENDENCIES)
 
 $(TARGET): $(OBJECTS)
-	g++ $(LDFLAGS) $^ -o $@
+	g++ $^ $(LDFLAGS) -o $@
 
 $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	g++ $(CFLAGS) -MF $(BUILD_DIR)/$*.d -MMD -MP -c $< -o $@

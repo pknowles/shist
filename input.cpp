@@ -7,9 +7,19 @@
 #include <sys/ioctl.h>
 #include <readline/history.h>
 #include <readline/readline.h>
+#include <unistd.h>
+#include <thread>
+#include <deque>
+#include <mutex>
+#include <vector>
 
 static int g_input = 0;
 static redisplay_callback g_redisplay_callback;
+
+static int g_realStdin;
+static std::vector<int> g_stdinDuplicates;
+static std::mutex g_stdinDuplicatesMutex;
+static std::thread g_stdinProxyThread;
 
 int readline_getch()
 {
@@ -91,4 +101,86 @@ void term_execute()
 	// ^J - run the command
 	const char execute[] = {10, 0};
 	term_send(execute);
+}
+
+void stdin_proxy(int stdinReal, int stdinFake)
+{
+	std::vector<int> outFDs;
+	std::vector<FILE*> outFiles;
+
+	FILE* realStdinFile = fdopen(stdinReal, "r");
+	if (!realStdinFile) {
+		fprintf(stderr, "Failed to open real stdin");
+		return;
+	}
+
+	FILE* fakeStdinFile = fdopen(stdinFake, "w");
+	if (fakeStdinFile) {
+		outFiles.push_back(fakeStdinFile);
+	} else {
+		fprintf(stderr, "Failed to open fake stdin");
+		return;
+	}
+
+	const int bufferSize = 32;
+	char buffer[bufferSize];
+	while (true) {
+		// FIXME: read lots at once!
+		buffer[0] = getc(realStdinFile);
+
+		{
+			std::lock_guard<std::mutex> lock(g_stdinDuplicatesMutex);
+			for (auto& dupe : g_stdinDuplicates) {
+				FILE* outFile = fdopen(dupe, "w");
+				if (outFile) {
+					outFiles.push_back(outFile);
+				} else {
+					fprintf(stderr, "Failed to open stdin dupe %i", dupe);
+				}
+				outFDs.push_back(dupe);
+			}
+			g_stdinDuplicates.clear();
+		}
+
+		for (auto& f : outFiles) {
+			putc(buffer[0], f);
+		}
+	}
+
+	for (auto& f : outFiles) {
+		fclose(f);
+	}
+	for (auto& fd : outFDs) {
+		close(fd);
+	}
+	fclose(realStdinFile);
+	fclose(fakeStdinFile);
+	close(stdinReal);
+	close(stdinFake);
+}
+
+void input_begin()
+{
+	// hook stdin. needed to keep raw input
+	int stdinReal = dup(STDIN_FILENO);
+	int stdinFake[2];
+	pipe(stdinFake);
+	dup2(stdinFake[0], STDIN_FILENO);
+	close(stdinFake[0]);
+
+	g_stdinProxyThread = std::thread(stdin_proxy, stdinReal, stdinFake[1]);
+}
+
+void input_end()
+{
+	// TODO: restore stdin (?), close streams and stop thread
+}
+
+int get_stdin_dupe()
+{
+	int stdinDupePipe[2];
+	pipe(stdinDupePipe);
+	std::lock_guard<std::mutex> lock(g_stdinDuplicatesMutex);
+	g_stdinDuplicates.push_back(stdinDupePipe[1]);
+	return stdinDupePipe[0];
 }
