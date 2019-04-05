@@ -2,10 +2,12 @@
 
 #include "screen.h"
 #include "history.h"
-#include <unistd.h>
+#include "input.h"
 #include <ncurses.h>
 #include <assert.h>
 #include <string>
+#include <unistd.h>
+
 #include <readline/readline.h>
 
 struct WindowLayout {
@@ -24,6 +26,7 @@ static int g_selection = 0;
 void post_draw()
 {
 	move(g_layout.promptLine, g_prompt.size() + g_cursor);
+	refresh();
 }
 
 int get_history_line(int item)
@@ -34,13 +37,19 @@ int get_history_line(int item)
 
 void draw_history_item(const HistoryItem *item, int line)
 {
+	move(line, 0);
 	if (item) {
+		size_t width = static_cast<size_t>(getmaxx(stdscr));
 		bool selLine = line == get_history_line(g_selection);
-		mvprintw(line, 0, "%s%s", selLine ? "> " : "  ", item->line);
-	} else {
-		move(line, 0);
+		std::string str = std::string(selLine ? "> " : "  ") + item->line;
+		//mvprintw(line, 0, "%s%s", selLine ? "> " : "  ", item->line);
+		mvaddnstr(line, 0, str.c_str(), std::min(str.size(), width));
 	}
-	clrtoeol();
+
+	// Clear the rest of the line only if we didn't just wrap by writing to the last column
+	if (getcury(stdscr) == line) {
+		clrtoeol();
+	}
 }
 
 void draw_history()
@@ -82,13 +91,6 @@ int screen_begin()
 		return ret;
 	}
 
-	// FIXME: need some hackery to make ncurses use this stdin instead of the real one
-//	g_screenStdin = get_stdin_dupe();
-//	g_screenStdinFile = fdopen(g_screenStdin, "r");
-//	if (!g_screenStdinFile) {
-//		fprintf(stderr, "Error: failed to open stdin dupe %i", g_screenStdin);
-//	}
-
 	g_prompt = "$ ";
 
 	g_layout = {};
@@ -123,6 +125,11 @@ const char *screen_selection()
 
 void pattern_changed(const char *pattern, int cursor)
 {
+	// TODO: ideally don't call this if it hasn't changed
+	if (g_pattern == pattern && g_cursor == cursor) {
+		return;
+	}
+
 	g_layout.histScroll = 0;
 	g_selection	= 0;
 	history_filter(pattern);
@@ -143,7 +150,7 @@ void move_selection(int i, bool pages, bool wrap)
 		return;
 	}
 
-	int lastSelection = 0;
+	int lastSelection = g_selection;
 
 	g_selection += i * (pages ? LINES : 1);
 	if (wrap) {
@@ -174,10 +181,9 @@ void move_selection(int i, bool pages, bool wrap)
 int screen_get_char()
 {
 	int c;
-
+	// Consume screen related actions first
 	while (true) {
 		c = wgetch(stdscr);
-		//int c = rl_getc(stdin);
 
 		switch (c) {
 		case KEY_RESIZE:
@@ -196,13 +202,8 @@ int screen_get_char()
 			move_selection(-1, false, true);
 			break;
 		default:
-			//bool hasRaw = get_raw_char(&c);
-			//assert(hasRaw);
 			return c;
 		}
-
-		// sequence consumed. clear raw buffer
-
 	}
 
 }
