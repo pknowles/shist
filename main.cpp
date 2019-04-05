@@ -23,8 +23,8 @@ g_action = ACTION_RESTORE_COMMAND; g_done = true; return 0;
 }
 int tab(int a, int b) {g_action = ACTION_REPLACE_COMMAND; g_done = true; return 0;}
 int enter(int a, int b) {g_action = ACTION_EXECUTE_SELECTION; g_done = true; return 0;}
-int arrow_up(int a, int b) {move_selection(1, false, true); return 0;}
-int arrow_down(int a, int b) {move_selection(-1, false, true); return 0;}
+int arrow_up(int a, int b) {move_selection(1, false, false); return 0;}
+int arrow_down(int a, int b) {move_selection(-1, false, false); return 0;}
 int page_up(int a, int b) {move_selection(1, true, false); return 0;}
 int page_down(int a, int b) {move_selection(-1, true, false); return 0;}
 

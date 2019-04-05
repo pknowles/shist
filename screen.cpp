@@ -32,7 +32,7 @@ void post_draw()
 int get_history_line(int item)
 {
 	return g_layout.histLineTop +
-		g_layout.histLineCount - item - 1;
+		g_layout.histLineCount - (item - g_layout.histScroll) - 1;
 }
 
 void draw_history_item(const HistoryItem *item, int line)
@@ -66,8 +66,11 @@ void draw_history()
 {
 	int count;
 	const HistoryItem* items;
+
+	// Request enough history to fill the screen
 	int topOfScreen = g_layout.histScroll + g_layout.histLineCount;
 	history_items(topOfScreen, &count, &items);
+
 	int maxItem = std::min(count, topOfScreen);
 	for (int i = g_layout.histScroll; i < topOfScreen; ++i) {
 		int line = get_history_line(i);
@@ -84,10 +87,15 @@ void draw_prompt()
 void on_resize()
 {
 	int top = 0;
-	int bottom = LINES-1;
-	g_layout.promptLine = bottom--;
+	int bottom = LINES;
+
+	// Reserve space for the prompt
+	// Decrement bottom to shrink the remaining free lines
+	g_layout.promptLine = --bottom;
+
+	// Use everything that's left for the history list
 	g_layout.histLineTop = top;
-	g_layout.histLineCount = bottom - top + 1;
+	g_layout.histLineCount = bottom - top;
 
 	draw_history();
 	draw_prompt();
@@ -153,34 +161,47 @@ void pattern_changed(const char *pattern, int cursor)
 
 void move_selection(int i, bool pages, bool wrap)
 {
+	int lastSelection = g_selection;
+
+	// Move the selection
+	g_selection += i * (pages ? LINES : 1);
+
+	if (wrap) {
+		// Wrap between top/bottom of screen
+		g_selection = g_layout.histScroll + ((g_selection - g_layout.histScroll + g_layout.histLineCount) % g_layout.histLineCount);
+	}
+
+	// Request history up to the new selection. Will mostly just get cached results.
 	int count;
 	const HistoryItem* items;
-	history_items(0, &count, &items);
-
+	history_items(g_selection + 1, &count, &items);
 	if (!count) {
+		g_selection = 0;
 		return;
 	}
 
-	int lastSelection = g_selection;
-
-	g_selection += i * (pages ? LINES : 1);
-	if (wrap) {
-		g_selection = g_selection % count;
-	} else {
-		g_selection = std::min(std::max(g_selection, 0), count);
+	// Wrap between top/bottom of history
+	if (g_selection >= count) {
+		assert(!wrap);
+		g_selection = 0;
 	}
 	if (g_selection < 0) {
-		g_selection += count;
+		// Need to request all of the history :(
+		// TODO: Ideally we start searching backwards instead
+		history_items(9999999, &count, &items);
+		g_selection = count - 1;
 	}
 
 	if (g_selection < g_layout.histScroll ||
 		g_selection >= g_layout.histScroll +
 		g_layout.histLineCount) {
+		assert(!wrap);
 		//scroll_to(g_selection);
-		assert(false);
+		g_layout.histScroll = std::min(std::max(g_layout.histScroll, g_selection + 1 - g_layout.histLineCount), g_selection);
 		draw_history();
 		post_draw();
 	} else if (lastSelection != g_selection) {
+		// Optimization - only need to re-render the previous and currently selected lines
 		draw_history_item(&items[lastSelection],
 			get_history_line(lastSelection));
 		draw_history_item(&items[g_selection],
