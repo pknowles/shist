@@ -36,12 +36,14 @@ int history_begin()
 	}
 	HISTORY_STATE *historyState=history_get_history_state();
 
+	history_filter(g_pattern.c_str());
+
 	return 0;
 }
 
 void history_filter(const char *pattern)
 {
-	history_set_pos(0);
+	history_set_pos(history_length); // no -1? doesn't smell right
 	g_pattern = pattern;
 	g_items.resize(0);
 	g_itemSet.clear();
@@ -52,14 +54,14 @@ void history_items(int max, int *count, const HistoryItem **items)
 	while ((int)g_items.size() < max) {
 		HIST_ENTRY *entry;
 		if (g_pattern.size()) {
-			if (history_search(g_pattern.c_str(), 0) < 0) {
+			if (history_search(g_pattern.c_str(), -1) < 0) {
 				break;
 			} else {
 				entry = current_history();
-				next_history();
+				previous_history();
 			}
 		} else {
-			entry = next_history();
+			entry = previous_history();
 			if (!entry) {
 				break;
 			}
