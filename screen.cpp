@@ -18,7 +18,7 @@ Screen::Screen()
 	, m_histLineCount(0)
 	, m_histScroll(0)
 	, m_prompt("$ ")
-	, m_pattern(0)
+	, m_pattern("")
 	, m_cursor(0)
 	, m_selection(0)
 {

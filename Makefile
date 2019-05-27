@@ -1,8 +1,9 @@
 
 TARGET:= shist
 SOURCE:= $(wildcard *.cpp)
+INCLUDE_DIRS:=cxxopts
 BUILD_DIR:= .build
-CFLAGS:= -g -std=c++17
+CFLAGS:= $(addprefix -I, $(INCLUDE_DIRS)) -g -std=c++17
 LDFLAGS:= -lreadline -lncurses -lpthread
 
 .PHONY: all

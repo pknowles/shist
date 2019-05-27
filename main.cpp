@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <readline/readline.h>
+#include <cxxopts.hpp>
 
 std::unique_ptr<Screen> gScreen;
 
@@ -32,13 +33,44 @@ int page_up(int a, int b) {gScreen->moveSelection(1, true, false); return 0;}
 int page_down(int a, int b) {gScreen->moveSelection(-1, true, false); return 0;}
 void pattern_changed(const char* pattern, int cursor) {gScreen->setFilter(pattern, cursor);}
 
+int printBindCommand(std::string shell, bool iocsti)
+{
+	if (shell == "bash") {
+		std::cout << "" << std::endl;
+	} else {
+		std::cerr << "Unsupported shell" << std::endl;
+		return 1;
+	}
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
+	bool iocsti = false;
+
+	cxxopts::Options options("shist", "Shell history selector - a replacement for standard reverse search.");
+	try {
+		options.add_options()
+			("iocsti", "Use TIOCSTI to inject commands into the shell")
+			("b,bind", "Print bind replacement command for the given shell.", cxxopts::value<std::string>()->implicit_value("bash"))
+		;
+		auto result = options.parse(argc, argv);
+		iocsti = result["iocsti"].as<bool>();
+		if (result["bind"].count()) {
+			auto bindCommandShell = result["bind"].as<std::string>();
+			std::cout << bindCommandShell << std::endl;
+			return printBindCommand(bindCommandShell, iocsti);
+		}
+	} catch (cxxopts::OptionException e) {
+		std::cerr << e.what() << std::endl;
+		return 1;
+	}
+
 	try {
 		gScreen = std::make_unique<Screen>();
 	} catch (std::runtime_error err) {
 		std::cerr << err.what() << std::endl;
-		return 1;
+		return 2;
 	}
 
 	int status = 0;
