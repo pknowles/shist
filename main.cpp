@@ -5,8 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <iostream>
 #include <string>
 #include <readline/readline.h>
+
+std::unique_ptr<Screen> gScreen;
 
 enum Action {
 	ACTION_NONE,
@@ -23,19 +26,22 @@ g_action = ACTION_RESTORE_COMMAND; g_done = true; return 0;
 }
 int tab(int a, int b) {g_action = ACTION_REPLACE_COMMAND; g_done = true; return 0;}
 int enter(int a, int b) {g_action = ACTION_EXECUTE_SELECTION; g_done = true; return 0;}
-int arrow_up(int a, int b) {move_selection(1, false, false); return 0;}
-int arrow_down(int a, int b) {move_selection(-1, false, false); return 0;}
-int page_up(int a, int b) {move_selection(1, true, false); return 0;}
-int page_down(int a, int b) {move_selection(-1, true, false); return 0;}
+int arrow_up(int a, int b) {gScreen->moveSelection(1, false, false); return 0;}
+int arrow_down(int a, int b) {gScreen->moveSelection(-1, false, false); return 0;}
+int page_up(int a, int b) {gScreen->moveSelection(1, true, false); return 0;}
+int page_down(int a, int b) {gScreen->moveSelection(-1, true, false); return 0;}
+void pattern_changed(const char* pattern, int cursor) {gScreen->setFilter(pattern, cursor);}
 
 int main(int argc, char** argv)
 {
-	int status = 0;
-
-	int ret = screen_begin();
-	if (ret != 0) {
-		return ret;
+	try {
+		gScreen = std::make_unique<Screen>();
+	} catch (std::runtime_error err) {
+		std::cerr << err.what() << std::endl;
+		return 1;
 	}
+
+	int status = 0;
 
 	const char* initialPattern = "";
 	int initialCursorPos = 0;
@@ -65,17 +71,16 @@ int main(int argc, char** argv)
 			continue;
 		}
 
-		int c = screen_get_char();
+		int c = gScreen->getChar();
 		//int c = readline_getch();
 
 		lastPattern = readline_step(c);
 	}
 
 	readline_end();
-	screen_end();
 
 	// Get the currently selected item from the history list
-	const char* selection = screen_selection();
+	const char* selection = gScreen->selection();
 
 	// If there was no selected item, e.g. filtered history is empty,
 	// use the entered pattern instead.

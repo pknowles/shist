@@ -2,7 +2,7 @@
 TARGET:= shist
 SOURCE:= $(wildcard *.cpp)
 BUILD_DIR:= .build
-CFLAGS:= -g
+CFLAGS:= -g -std=c++17
 LDFLAGS:= -lreadline -lncurses -lpthread
 
 .PHONY: all
