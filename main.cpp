@@ -8,6 +8,8 @@
 #include <iostream>
 #include <string>
 #include <readline/readline.h>
+#include <execinfo.h>
+#include <signal.h>
 #include <cxxopts.hpp>
 
 std::unique_ptr<Screen> gScreen;
@@ -42,8 +44,30 @@ int printBindCommand(std::string shell, bool iocsti)
 	return 0;
 }
 
+// Print a backtrace when compiled with debug mode
+void segfault_handler(int sig) {
+	// Exit ncurses and restore the terminal screen.
+	gScreen.reset();
+
+	const int maxStack = 64;
+	void *array[maxStack];
+	size_t size;
+
+	// get void*'s for all entries on the stack
+	size = backtrace(array, maxStack);
+
+	// print out all the frames to stderr
+	fprintf(stderr, "Error: signal %d:\n", sig);
+	backtrace_symbols_fd(array, size, STDERR_FILENO);
+	exit(1);
+}
+
 int main(int argc, char** argv)
 {
+#if !NDEBUG
+	signal(SIGSEGV, segfault_handler);
+#endif
+
 	bool iocsti = false;
 
 	cxxopts::Options options("shist", "Shell history selector - a replacement for standard reverse search.");
