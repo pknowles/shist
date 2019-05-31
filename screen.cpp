@@ -11,6 +11,83 @@
 
 #include <readline/readline.h>
 
+struct LinePart {
+	std::string text;
+	int colour;
+	int scoreMultiplier;
+
+	enum Type {
+		UNIQUE,
+		START,
+		END,
+		MATCH,
+		COMMON,
+	};
+
+	Type type;
+
+	LinePart(const char *str, size_t start, size_t len, int partColour, Type partType)
+		: text(str, start, len), colour(partColour), type(partType)
+	{
+	}
+
+	int score() const
+	{
+		// Desirable score features:
+		// - Show the matches in the string
+		// - Show the start of differences between adjacent strings
+		// - Show the start of the string
+		// - Show the end of the string
+		// - Hide long common substrings
+
+		switch (type) {
+		case UNIQUE: return text.size() * 2;
+		case START: return text.size();
+		case END: return text.size();
+		case MATCH: return 0;
+		case COMMON: return text.size() * 4;
+		}
+
+		assert(!"Invalid type");
+	}
+
+	size_t collapse(size_t numCharsToRemove)
+	{
+		const std::string replaceWith = "...";
+
+		size_t contextChars = 1;
+		if (text.size() > numCharsToRemove + replaceWith.size()) {
+			contextChars = (text.size() - replaceWith.size() - numCharsToRemove) / 2;
+		}
+
+		const size_t minRemoveChars = replaceWith.size() + contextChars * 2;
+
+		if (text.size() <= minRemoveChars) {
+			return 0;
+		}
+
+		numCharsToRemove = std::min(numCharsToRemove, text.size() - minRemoveChars);
+		text = text.substr(0, text.size() - numCharsToRemove - replaceWith.size() - contextChars) + replaceWith + text.substr(text.size() - contextChars, contextChars);
+		return numCharsToRemove;
+	}
+};
+
+struct LineText {
+	std::vector<LinePart> parts;
+	size_t size;
+	int score;
+
+	void update()
+	{
+		score = 0;
+		size = 0;
+		for (size_t i = 0; i < parts.size(); ++i) {
+			size += parts[i].text.size();
+			score += parts[i].score();;
+		}
+	}
+};
+
 Screen::Screen()
 	: m_history(std::make_unique<History>())
 	, m_promptLine(0)
@@ -68,6 +145,64 @@ void Screen::onResize()
 	onPostDraw();
 }
 
+std::pair<size_t, size_t> longestCommonSubstring(const std::string& a, const std::string& b)
+{
+
+}
+
+LineText fitLine(LineText line, size_t maxWidth, size_t startPart = 0)
+{
+	while (line.size > maxWidth) {
+		LineText best = line;
+		size_t charsToRemove = line.size - maxWidth;
+		for (size_t i = startPart; i < line.parts.size(); ++i) {
+			LineText tmp = line;
+			size_t charsRemoved = tmp.parts[i].collapse(charsToRemove);
+			tmp.update();
+			if (tmp.score < best.score) {
+				best = tmp;
+			}
+		}
+		if (line.score == best.score) {
+			// Line cannot be made any shorter
+			return line;
+		}
+		line = best;
+	}
+	return line;
+}
+
+LineText makeLineFromHistory(const HistoryItem& item)
+{
+	LineText lineText;
+	size_t lastPos = 0;
+	size_t lineLen = strlen(item.line);
+
+	// TODO: split line into common substrings
+
+	LinePart::Type previousType = LinePart::START;
+	for (auto& match : item.matches) {
+		// Add bits between lastPos and each match
+		lineText.parts.push_back(LinePart(item.line, lastPos, match.start - lastPos, 0, previousType));
+
+		// Add the matches
+		lineText.parts.push_back(LinePart(item.line, match.start, match.size, 1, LinePart::MATCH));
+		lastPos = match.start + match.size;
+
+		previousType = LinePart::UNIQUE;
+	}
+
+	// Add any remainder
+	if (lastPos	< lineLen) {
+		lineText.parts.push_back(LinePart(item.line, lastPos, lineLen - lastPos, 0, LinePart::END));
+	}
+
+	// Compute the total size etc.
+	lineText.update();
+
+	return lineText;
+}
+
 int Screen::historyItemToLine(int itemIndex)
 {
 	return m_histLineTop +
@@ -80,19 +215,18 @@ void Screen::drawHistoryItem(const HistoryItem *item, int line)
 	if (item) {
 		size_t width = static_cast<size_t>(getmaxx(stdscr));
 		bool selLine = line == historyItemToLine(m_selection);
-		std::string margin(selLine ? "> " : "  ");
-		std::string str = margin + item->line;
-		//mvprintw(line, 0, "%s%s", selLine ? "> " : "  ", item->line);
-		size_t lastMatch = 0;
-		for (auto& match : item->matches) {
-			size_t matchStart = static_cast<size_t>(match.start) + margin.size();
-			mvaddnstr(line, lastMatch, str.substr(lastMatch).c_str(), std::max(static_cast<size_t>(0), std::min(width, matchStart) - lastMatch));
-			attrset(COLOR_PAIR(1));
-			mvaddnstr(line, matchStart, str.substr(matchStart).c_str(), std::max(static_cast<size_t>(0), std::min(width, matchStart + static_cast<size_t>(match.size)) - matchStart));
-			attrset(A_NORMAL);
-			lastMatch = matchStart + match.size;
+		std::string prefix(selLine ? "> " : "  ");
+		auto lineText = makeLineFromHistory(*item);
+		lineText = fitLine(lineText, width - prefix.size());
+
+		mvaddnstr(line, 0, prefix.c_str(), prefix.size());
+
+		for (auto& part : lineText.parts) {
+			attrset(COLOR_PAIR(part.colour));
+			addnstr(part.text.c_str(), part.text.size());
 		}
-		mvaddnstr(line, lastMatch, str.substr(lastMatch).c_str(), std::min(str.size() - lastMatch, width));
+
+		attrset(COLOR_PAIR(0));
 	}
 
 	// Clear the rest of the line only if we didn't just wrap by writing to the last column
