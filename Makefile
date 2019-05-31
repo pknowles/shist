@@ -2,9 +2,10 @@
 TARGET:= shist
 SOURCE:= $(wildcard *.cpp)
 INCLUDE_DIRS:=cxxopts
+LIBRARIES:= -lreadline -lncurses -lpthread
 BUILD_DIR:= .build
 CFLAGS:= $(addprefix -I, $(INCLUDE_DIRS)) -g -std=c++17
-LDFLAGS:= -lreadline -lncurses -lpthread
+LDFLAGS:= -rdynamic $(LIBRARIES)
 
 .PHONY: all
 all: shist

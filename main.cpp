@@ -22,9 +22,7 @@ enum Action {
 bool g_done = false;
 static Action g_action = ACTION_NONE;
 
-int escape(int a, int b) {
-g_action = ACTION_RESTORE_COMMAND; g_done = true; return 0;
-}
+int escape(int a, int b) {g_action = ACTION_RESTORE_COMMAND; g_done = true; return 0;}
 int tab(int a, int b) {g_action = ACTION_REPLACE_COMMAND; g_done = true; return 0;}
 int enter(int a, int b) {g_action = ACTION_EXECUTE_SELECTION; g_done = true; return 0;}
 int arrow_up(int a, int b) {gScreen->moveSelection(1, false, false); return 0;}
@@ -91,6 +89,8 @@ int main(int argc, char** argv)
 	rl_bind_keyseq("\\C-r", arrow_up);
 	rl_bind_keyseq("\\e[B", arrow_down);
 	rl_bind_keyseq("\\C-s", arrow_up);
+	rl_bind_keyseq("\\e[5~", page_up);
+	rl_bind_keyseq("\\e[6~", page_down);
 
 	readline_begin(initialPattern, initialCursorPos, pattern_changed);
 

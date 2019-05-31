@@ -158,7 +158,7 @@ void Screen::moveSelection(int i, bool pages, bool wrap)
 	int lastSelection = m_selection;
 
 	// Move the selection
-	m_selection += i * (pages ? LINES : 1);
+	m_selection += i * (pages ? m_histLineCount : 1);
 
 	if (wrap) {
 		// Wrap between top/bottom of screen
@@ -191,7 +191,13 @@ void Screen::moveSelection(int i, bool pages, bool wrap)
 		m_histLineCount) {
 		assert(!wrap);
 		//scroll_to(m_selection);
-		m_histScroll = std::min(std::max(m_histScroll, m_selection + 1 - m_histLineCount), m_selection);
+		int margin = pages ? std::min(m_histLineCount / 2, 5) : 0;
+
+		// Scroll must keep the selection visible
+		int scrollMax = std::max(0, std::min(count - m_histLineCount, m_selection - margin));
+		int scrollMin = std::min(count - 1, std::max(0, m_selection + 1 - m_histLineCount + margin));
+		m_histScroll = std::min(std::max(m_histScroll, scrollMin), scrollMax);
+
 		drawHistory();
 		onPostDraw();
 	} else if (lastSelection != m_selection) {
