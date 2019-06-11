@@ -99,7 +99,25 @@ Screen::Screen()
 	, m_cursor(0)
 	, m_selection(0)
 {
-	initscr();
+
+	// start curses mode
+	if(!isatty(fileno(stdout))) {
+		// Handle the case when stdout has been redirected.
+		// https://stackoverflow.com/questions/17450014/ncurses-program-not-working-correctly-when-used-for-command-substitution
+		// https://stackoverflow.com/questions/8371877/ncurses-and-linux-pipeline
+		FILE* out = stdout;
+		out = fopen("/dev/tty", "w");
+
+		// Should really test `out` to make sure that worked.
+		setbuf(out, NULL);
+
+		// Here, we don't worry about the case where stdin has been
+		// redirected, but we could do something similar to out
+		// for input, opening "/dev/tty" in mode "r" for in if necessary.
+		m_newtermScreen = newterm(NULL, out, stdin);
+	} else {
+		initscr();
+	}
 
 	if (has_colors()) {
 		start_color();
@@ -119,6 +137,10 @@ Screen::Screen()
 Screen::~Screen()
 {
 	endwin();
+
+	if (m_newtermScreen) {
+		delscreen(reinterpret_cast<SCREEN*>(m_newtermScreen));
+	}
 }
 
 void Screen::onPostDraw()

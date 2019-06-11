@@ -33,5 +33,6 @@ private:
 	std::string m_pattern;
 	int m_cursor = 0;
 	int m_selection = 0;
+	void* m_newtermScreen = nullptr;
 };
 
