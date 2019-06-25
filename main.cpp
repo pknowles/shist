@@ -5,11 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <limits.h>
 #include <iostream>
 #include <string>
 #include <readline/readline.h>
 #include <execinfo.h>
 #include <signal.h>
+#include <assert.h>
 #include <cxxopts.hpp>
 
 std::unique_ptr<Screen> gScreen;
@@ -22,6 +24,7 @@ enum Action {
 };
 
 bool g_done = false;
+int g_lastCursor = 0;
 static Action g_action = ACTION_NONE;
 
 int escape(int a, int b) {g_action = ACTION_RESTORE_COMMAND; g_done = true; return 0;}
@@ -31,12 +34,17 @@ int arrow_up(int a, int b) {gScreen->moveSelection(1, false, false); return 0;}
 int arrow_down(int a, int b) {gScreen->moveSelection(-1, false, false); return 0;}
 int page_up(int a, int b) {gScreen->moveSelection(1, true, false); return 0;}
 int page_down(int a, int b) {gScreen->moveSelection(-1, true, false); return 0;}
-void pattern_changed(const char* pattern, int cursor) {gScreen->setFilter(pattern, cursor);}
+void pattern_changed(const char* pattern, int cursor) {gScreen->setFilter(pattern, cursor); g_lastCursor = cursor;}
 
-int printBindCommand(std::string shell, bool iocsti)
+int printBindCommand(std::string exe, std::string shell, bool iocsti)
 {
 	if (shell == "bash") {
-		std::cout << "" << std::endl;
+		if (iocsti) {
+			std::cout << "bind -x '\"\\C-r\":\"" << exe << "\"'" << std::endl;
+		} else {
+			std::cout << "bind '\"\\C-r\": \"\\ev\\eb\"' ;"
+				<< " bind -x '\"\\ev\": eval \"$(" << exe << " --iocsti=false)\" ; $SHIST_BIND'" << std::endl;
+		}
 	} else {
 		std::cerr << "Unsupported shell" << std::endl;
 		return 1;
@@ -62,6 +70,17 @@ void segfault_handler(int sig) {
 	exit(1);
 }
 
+std::string getExePath(std::string failString)
+{
+	char buff[PATH_MAX];
+	ssize_t len = ::readlink("/proc/self/exe", buff, sizeof(buff) - 1);
+	if (len != -1) {
+		buff[len] = '\0';
+		return buff;
+	}
+	return failString;
+}
+
 int main(int argc, char** argv)
 {
 #if !NDEBUG
@@ -73,15 +92,23 @@ int main(int argc, char** argv)
 	cxxopts::Options options("shist", "Shell history selector - a replacement for standard reverse search.");
 	try {
 		options.add_options()
-			("iocsti", "Use TIOCSTI to inject commands into the shell")
+			("h,help", "Prints the usage.")
+			("iocsti", "Use TIOCSTI to inject commands into the shell", cxxopts::value<bool>()->default_value("true"))
 			("b,bind", "Print bind replacement command for the given shell.", cxxopts::value<std::string>()->implicit_value("bash"))
 		;
 		auto result = options.parse(argc, argv);
+
+		if (result["help"].as<bool>()) {
+			std::cout << options.help();
+			return 0;
+		}
+
 		iocsti = result["iocsti"].as<bool>();
+
 		if (result["bind"].count()) {
 			auto bindCommandShell = result["bind"].as<std::string>();
-			std::cout << bindCommandShell << std::endl;
-			return printBindCommand(bindCommandShell, iocsti);
+			assert(argc > 0);
+			return printBindCommand(getExePath(argv[0]), bindCommandShell, iocsti);
 		}
 	} catch (cxxopts::OptionException e) {
 		std::cerr << e.what() << std::endl;
@@ -136,32 +163,45 @@ int main(int argc, char** argv)
 	readline_end();
 
 	// Get the currently selected item from the history list
-	const char* selection = gScreen->selection();
+	std::string selection = gScreen->selection() ? gScreen->selection() : "";
+	gScreen.reset();
 
 	// If there was no selected item, e.g. filtered history is empty,
 	// use the entered pattern instead.
-	if (!selection) {
+	if (!selection.size()) {
 		selection = lastPattern;
+		g_lastCursor = selection.size();
 	}
 
 	switch (g_action) {
 	case ACTION_EXECUTE_SELECTION:
-		if (selection) {
-			term_replace_command(selection);
-			term_execute();
+		if (selection.size()) {
+			if (iocsti) {
+				term_replace_command(selection.c_str());
+				term_execute();
+			} else {
+				printf("READLINE_POINT=%i READLINE_LINE=\"%s\" SHIST_BIND=\"bind '\\\"\\eb\\\":\\\"\\C-j\\\"'\"", g_lastCursor, selection.c_str());
+				//printf("%s", selection);
+			}
 			break;
 		}
 		status = 1;
 		break;
 	case ACTION_REPLACE_COMMAND:
-		if (selection) {
-			term_replace_command(selection);
+		if (selection.size()) {
+			if (iocsti) {
+				term_replace_command(selection.c_str());
+			} else {
+				//printf("SHIST_BIND=\"bind '\\\"\\C-b\\\":\\\"\\C-j\\\"'\"");
+				printf("READLINE_POINT=%i READLINE_LINE=\"%s\" SHIST_BIND=\"bind '\\\"\\eb\\\":\\\"here\\\"'\"", g_lastCursor, selection.c_str());
+			}
 			break;
 		}
 		status = 1;
 		break;
 	case ACTION_RESTORE_COMMAND:
 		// Original should still be there. Nothing to do.
+		// NOTE: This is lost without the iocsti injection method.
 		break;
 	case ACTION_NONE:
 	default:
